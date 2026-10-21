@@ -1,0 +1,649 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0e1a">
+<meta name="color-scheme" content="dark">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Compteur">
+<meta name="description" content="Un compteur à une main, avec objectif, son et effets, pensé pour être utilisé en marchant.">
+<title>Compteur</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<style>
+  :root {
+    --bg: #0b0e1a;
+    --card: #171b2e;
+    --line: rgba(255, 255, 255, .09);
+    --text: #f5f7ff;
+    --muted: #98a1c4;
+    --mint: #34f5c5;
+    --mint-deep: #0a8f6f;
+    --blue: #4d9bff;
+    --gold: #ffd23f;
+    --danger: #ff5e7a;
+    --ring-a: var(--mint);
+    --ring-b: var(--blue);
+    --plus-a: #5dffd6;
+    --plus-b: #12c99c;
+    --plus-edge: var(--mint-deep);
+    --plus-glow: rgba(52, 245, 197, .28);
+    --plus-ink: #04261d;
+    color-scheme: dark;
+  }
+  body.done {
+    --ring-a: #ffd23f;
+    --ring-b: #ff9f1c;
+    --plus-a: #ffe27a;
+    --plus-b: #ffb703;
+    --plus-edge: #a86f00;
+    --plus-glow: rgba(255, 190, 40, .3);
+    --plus-ink: #3b2600;
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  html, body {
+    height: 100%;
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    overscroll-behavior: none;
+    touch-action: manipulation;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+  body {
+    height: 100dvh;
+    overflow: hidden;
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    gap: 8px;
+    padding:
+      max(14px, env(safe-area-inset-top))
+      max(16px, env(safe-area-inset-right))
+      max(18px, env(safe-area-inset-bottom))
+      max(16px, env(safe-area-inset-left));
+    background:
+      radial-gradient(120% 60% at 50% 38%, rgba(77, 155, 255, .13), transparent 70%),
+      var(--bg);
+  }
+
+  button { font: inherit; color: inherit; cursor: pointer; }
+  button:focus-visible { outline: 3px solid var(--blue); outline-offset: 3px; }
+  svg { display: block; }
+
+  /* ---------- Barre du haut : petits boutons, loin du gros "+" ---------- */
+  .top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .top-right { display: flex; align-items: center; gap: 10px; }
+  .round, .chip {
+    height: 52px;
+    border: 1px solid var(--line);
+    background: var(--card);
+    color: var(--muted);
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .round { width: 52px; border-radius: 50%; }
+  .round svg { width: 24px; height: 24px; }
+  .chip { padding: 0 18px; gap: 9px; border-radius: 26px; font-weight: 650; font-size: 16px; color: var(--text); }
+  .chip svg { width: 20px; height: 20px; color: var(--ring-a); }
+  #sound[aria-pressed="false"] .waves { display: none; }
+  #sound[aria-pressed="true"] .mute { display: none; }
+  #sound[aria-pressed="true"] { color: var(--text); }
+
+  /* ---------- Compteur ---------- */
+  main {
+    display: grid; place-content: center; justify-items: center; gap: 12px;
+    min-height: 0; container-type: size;
+  }
+  .ring {
+    /* L'anneau prend la place restante, jamais plus : 12px d'écart + ligne de statut (~30px) */
+    --size: min(80vw, 34dvh);
+    --size: max(120px, min(80vw, calc(100cqh - 48px)));
+    position: relative;
+    width: var(--size); height: var(--size);
+    filter: drop-shadow(0 0 22px color-mix(in srgb, var(--ring-a) 35%, transparent));
+  }
+  .ring svg { width: 100%; height: 100%; }
+  .track { fill: none; stroke: var(--line); stroke-width: 12; }
+  .arc {
+    fill: none; stroke-width: 12; stroke-linecap: round;
+    stroke-dasharray: 552.92; stroke-dashoffset: 552.92;
+    transition: stroke-dashoffset .35s cubic-bezier(.2, .8, .2, 1);
+  }
+  .readout {
+    position: absolute; inset: 0;
+    display: grid; place-content: center; justify-items: center; gap: 2px;
+  }
+  .count {
+    font-size: calc(var(--size) * .36);
+    font-weight: 800; line-height: 1;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -.02em;
+  }
+  .count[data-len="4"] { font-size: calc(var(--size) * .28); }
+  .count[data-len="5"] { font-size: calc(var(--size) * .22); }
+  .count[data-len="6"] { font-size: calc(var(--size) * .18); }
+  .of { font-size: calc(var(--size) * .08); font-weight: 600; color: var(--muted); min-height: 1.2em; }
+  .status { margin: 0; font-size: 20px; font-weight: 700; color: var(--ring-a); text-align: center; min-height: 1.4em; }
+
+  /* ---------- Le gros bouton + : toute la zone du pouce ---------- */
+  #plus {
+    position: relative; overflow: hidden;
+    width: 100%;
+    height: min(44dvh, 430px);
+    border: 0; border-radius: 36px;
+    display: grid; place-items: center;
+    background: linear-gradient(160deg, var(--plus-a), var(--plus-b));
+    color: var(--plus-ink);
+    box-shadow: 0 10px 0 var(--plus-edge), 0 24px 44px var(--plus-glow);
+    transition: transform .06s ease-out, box-shadow .06s ease-out;
+  }
+  #plus.down { transform: translateY(8px); box-shadow: 0 2px 0 var(--plus-edge), 0 8px 20px var(--plus-glow); }
+  #plus svg { width: 34%; max-width: 170px; height: auto; fill: currentColor; pointer-events: none; }
+  .ripple {
+    position: absolute; width: 40px; height: 40px; margin: -20px 0 0 -20px;
+    border-radius: 50%; background: rgba(255, 255, 255, .6); pointer-events: none;
+  }
+
+  /* ---------- Effets ---------- */
+  #fx { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 20; }
+  #flash {
+    position: fixed; inset: 0; opacity: 0; pointer-events: none; z-index: 19;
+    background: radial-gradient(circle at 50% 62%, var(--ring-a), transparent 70%);
+  }
+  .float {
+    position: fixed; left: 0; top: 0; z-index: 21; pointer-events: none;
+    font-size: 30px; font-weight: 800; color: var(--ring-a);
+    text-shadow: 0 2px 14px rgba(0, 0, 0, .55);
+    will-change: transform, opacity;
+  }
+  .float.neg { color: var(--muted); font-size: 22px; }
+
+  /* ---------- Réglages (feuille en bas, accessible au pouce) ---------- */
+  dialog {
+    margin: auto auto 0; width: 100%; max-width: 560px; padding: 0;
+    border: 1px solid var(--line); border-bottom: 0;
+    border-radius: 28px 28px 0 0;
+    background: var(--card); color: var(--text);
+  }
+  dialog::backdrop { background: rgba(4, 6, 14, .72); backdrop-filter: blur(4px); }
+  .sheet { display: grid; gap: 16px; padding: 22px 20px max(22px, env(safe-area-inset-bottom)); }
+  .sheet-head { display: flex; align-items: center; justify-content: space-between; }
+  .sheet h2 { margin: 0; font-size: 22px; }
+  .chips { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .btn {
+    min-height: 56px; border-radius: 16px; border: 1px solid var(--line);
+    background: rgba(255, 255, 255, .05); font-weight: 700; font-size: 18px;
+  }
+  .btn.primary { background: var(--mint); color: var(--plus-ink); border-color: transparent; }
+  .row { display: grid; grid-template-columns: 1fr auto; gap: 10px; }
+  input {
+    width: 100%; min-height: 56px; padding: 0 16px; border-radius: 16px;
+    border: 1px solid var(--line); background: var(--bg); color: var(--text);
+    font: 700 22px system-ui, sans-serif;
+    -webkit-user-select: text; user-select: text;
+  }
+  input:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
+  .btn.danger { color: var(--danger); }
+  .btn.danger.armed { background: var(--danger); color: #2a0610; border-color: transparent; }
+  .shake { animation: shake .3s; }
+  @keyframes shake { 25% { transform: translateX(-6px); } 75% { transform: translateX(6px); } }
+
+  /* Paysage (téléphone couché) : compteur à gauche, gros bouton à droite */
+  @media (orientation: landscape) and (max-height: 520px) {
+    body { grid-template-columns: 1fr 1fr; grid-template-rows: auto 1fr; column-gap: 16px; }
+    .top { grid-column: 1 / -1; }
+    main { grid-row: 2; grid-column: 1; }
+    #plus { grid-row: 2; grid-column: 2; height: 100%; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .arc, #plus { transition: none; }
+  }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <!-- Petit et excentré : uniquement pour corriger un appui par erreur -->
+  <button id="minus" class="round" aria-label="Retirer un (corriger une erreur)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M5.5 12h13"/></svg>
+  </button>
+  <div class="top-right">
+    <button id="sound" class="round" aria-pressed="true" aria-label="Son">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 9.5v5h3.8L13 18.5v-13L7.8 9.5H4z" fill="currentColor"/>
+        <path class="waves" d="M16.2 9a4.2 4.2 0 0 1 0 6M18.6 6.4a8 8 0 0 1 0 11.2"/>
+        <path class="mute" d="M16.5 9.5l5 5m0-5l-5 5"/>
+      </svg>
+    </button>
+    <button id="goalBtn" class="chip" aria-haspopup="dialog">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r=".6" fill="currentColor"/></svg>
+      <span id="goalLabel">Objectif</span>
+    </button>
+  </div>
+</header>
+
+<main>
+  <div id="ring" class="ring">
+    <svg viewBox="0 0 200 200" aria-hidden="true">
+      <defs>
+        <linearGradient id="grad" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" style="stop-color: var(--ring-a)"/>
+          <stop offset="1" style="stop-color: var(--ring-b)"/>
+        </linearGradient>
+      </defs>
+      <circle class="track" cx="100" cy="100" r="88"/>
+      <circle id="arc" class="arc" cx="100" cy="100" r="88" stroke="url(#grad)" transform="rotate(-90 100 100)"/>
+    </svg>
+    <div class="readout" role="status" aria-live="polite">
+      <div id="count" class="count">0</div>
+      <div id="of" class="of"></div>
+    </div>
+  </div>
+  <p id="status" class="status"></p>
+</main>
+
+<button id="plus" aria-label="Ajouter un">
+  <svg viewBox="0 0 100 100" aria-hidden="true"><rect x="40" y="8" width="20" height="84" rx="10"/><rect x="8" y="40" width="84" height="20" rx="10"/></svg>
+</button>
+
+<div id="flash"></div>
+<canvas id="fx" aria-hidden="true"></canvas>
+
+<dialog id="settings" aria-labelledby="settingsTitle">
+  <div class="sheet">
+    <div class="sheet-head">
+      <h2 id="settingsTitle">Objectif</h2>
+      <button id="close" class="round" aria-label="Fermer" autofocus>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div class="chips" id="presets"></div>
+    <form id="goalForm" class="row">
+      <input id="goalInput" type="number" inputmode="numeric" min="1" max="999999" step="1" placeholder="Autre objectif" aria-label="Objectif personnalisé">
+      <button class="btn primary" type="submit">OK</button>
+    </form>
+    <button id="noGoal" class="btn" type="button">Sans objectif</button>
+    <button id="reset" class="btn danger" type="button">Remettre à zéro</button>
+  </div>
+</dialog>
+
+<script>
+(() => {
+  'use strict';
+
+  const $ = (s) => document.querySelector(s);
+  const el = {
+    count: $('#count'), of: $('#of'), status: $('#status'), arc: $('#arc'), ring: $('#ring'),
+    plus: $('#plus'), minus: $('#minus'), sound: $('#sound'), goalBtn: $('#goalBtn'), goalLabel: $('#goalLabel'),
+    flash: $('#flash'), fx: $('#fx'), dlg: $('#settings'), form: $('#goalForm'), input: $('#goalInput'),
+    presets: $('#presets'), noGoal: $('#noGoal'), reset: $('#reset'), close: $('#close'),
+  };
+
+  const STORE = 'compteur:v1';
+  const CIRC = 2 * Math.PI * 88;
+  const MAX_GOAL = 999999;
+  const PRESETS = [25, 50, 100, 200, 500, 1000];
+  const calm = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const fmt = (n) => n.toLocaleString('fr-FR');
+
+  /* ---------------- État (sauvegardé sur l'appareil) ---------------- */
+  const state = { count: 0, goal: 100, muted: false };
+
+  try {
+    const s = JSON.parse(localStorage.getItem(STORE));
+    if (s) {
+      if (Number.isInteger(s.count) && s.count >= 0) state.count = s.count;
+      if (s.goal === null || (Number.isInteger(s.goal) && s.goal > 0 && s.goal <= MAX_GOAL)) state.goal = s.goal;
+      state.muted = s.muted === true;
+    }
+  } catch { /* stockage indisponible : on continue sans */ }
+
+  const save = () => { try { localStorage.setItem(STORE, JSON.stringify(state)); } catch { /* ignore */ } };
+
+  function render() {
+    const { count, goal, muted } = state;
+    const done = goal !== null && count >= goal;
+
+    el.count.textContent = fmt(count);
+    el.count.dataset.len = String(String(count).length);
+    el.of.textContent = goal !== null ? `sur ${fmt(goal)}` : '';
+
+    // Sans objectif, l'anneau se remplit par paliers de 10.
+    const progress = goal !== null ? Math.min(count / goal, 1) : (count % 10) / 10;
+    el.arc.style.strokeDashoffset = String(CIRC * (1 - progress));
+    el.arc.style.opacity = progress > 0 ? '1' : '0';
+
+    document.body.classList.toggle('done', done);
+    el.goalLabel.textContent = goal !== null ? `Objectif ${fmt(goal)}` : 'Fixer un objectif';
+    el.status.textContent =
+      goal === null ? 'Sans objectif'
+      : count === goal ? 'Objectif atteint !'
+      : count > goal ? `Objectif dépassé de ${fmt(count - goal)}`
+      : `Encore ${fmt(goal - count)}`;
+
+    el.sound.setAttribute('aria-pressed', String(!muted));
+    el.sound.setAttribute('aria-label', muted ? 'Son coupé, appuyer pour activer' : 'Son activé, appuyer pour couper');
+    el.minus.disabled = count === 0;
+    el.minus.style.opacity = count === 0 ? '.4' : '1';
+  }
+
+  /* ---------------- Son (synthétisé, aucun fichier) ---------------- */
+  let ctx = null;
+  let master = null;
+
+  function audio() {
+    if (state.muted) return null;
+    if (!ctx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return null;
+      ctx = new AC();
+      master = ctx.createGain();
+      master.gain.value = .55;
+      master.connect(ctx.destination);
+    }
+    if (ctx.state !== 'running') ctx.resume().catch(() => {});
+    return ctx;
+  }
+  // iOS ne débloque le son qu'au relâchement du doigt : on réessaie à chaque fin de geste.
+  ['pointerup', 'touchend', 'click'].forEach((ev) =>
+    addEventListener(ev, () => { if (ctx && ctx.state !== 'running') ctx.resume().catch(() => {}); }, { passive: true }));
+
+  function tone(freq, when, dur, { type = 'sine', gain = .3, to = null } = {}) {
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = type;
+    o.frequency.setValueAtTime(freq, when);
+    if (to) o.frequency.exponentialRampToValueAtTime(to, when + dur);
+    g.gain.setValueAtTime(.0001, when);
+    g.gain.exponentialRampToValueAtTime(gain, when + .008);
+    g.gain.exponentialRampToValueAtTime(.0001, when + dur);
+    o.connect(g).connect(master);
+    o.start(when);
+    o.stop(when + dur + .03);
+  }
+
+  // Gamme pentatonique : chaque appui monte d'une note sur 10, puis ça repart — jamais faux.
+  const SCALE = [0, 2, 4, 7, 9];
+  const noteFor = (n) => {
+    const step = (n - 1) % 10;
+    return 523.25 * 2 ** ((SCALE[step % 5] + 12 * Math.floor(step / 5)) / 12);
+  };
+
+  const sound = {
+    tap(n) {
+      if (!audio()) return;
+      const t = ctx.currentTime, f = noteFor(n);
+      tone(f * .88, t, .14, { gain: .34, to: f });
+      tone(f * 2, t, .09, { type: 'triangle', gain: .1 });
+    },
+    milestone(n) {
+      if (!audio()) return;
+      const t = ctx.currentTime, f = 523.25;
+      [1, 1.25, 1.5, 2, 2.5].forEach((m, i) => tone(f * m, t + i * .055, .22, { type: 'triangle', gain: .28 }));
+    },
+    goal() {
+      if (!audio()) return;
+      const t = ctx.currentTime;
+      [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => tone(f, t + i * .09, .3, { type: 'triangle', gain: .3 }));
+      [523.25, 659.25, 783.99, 1046.5, 1318.5].forEach((f) => {
+        tone(f, t + .42, 1.1, { gain: .16 });
+        tone(f / 2, t + .42, 1.1, { type: 'triangle', gain: .06 });
+      });
+    },
+    minus() {
+      if (!audio()) return;
+      tone(320, ctx.currentTime, .14, { gain: .25, to: 190 });
+    },
+  };
+
+  const vibrate = (p) => { try { navigator.vibrate && navigator.vibrate(p); } catch { /* ignore */ } };
+
+  /* ---------------- Effets visuels ---------------- */
+  const g2d = el.fx.getContext('2d');
+  const COLORS = ['#34f5c5', '#4d9bff', '#ffd23f', '#ff5e9c', '#ffffff'];
+  let parts = [];
+  let raf = 0;
+  let prev = 0;
+
+  function fit() {
+    const d = Math.min(devicePixelRatio || 1, 2);
+    el.fx.width = Math.round(innerWidth * d);
+    el.fx.height = Math.round(innerHeight * d);
+    g2d.setTransform(d, 0, 0, d, 0, 0);
+  }
+  addEventListener('resize', fit);
+  fit();
+
+  function emit(n, x, y, o) {
+    if (calm) n = Math.ceil(n / 4);
+    for (let i = 0; i < n; i++) {
+      const a = o.angle + (Math.random() - .5) * o.spread;
+      const s = o.min + Math.random() * (o.max - o.min);
+      parts.push({
+        x: x + (o.w ? (Math.random() - .5) * o.w : 0), y,
+        vx: Math.cos(a) * s, vy: Math.sin(a) * s, g: o.g,
+        r: o.r * (.6 + Math.random() * .8), rect: !!o.rect,
+        rot: Math.random() * 6.28, vr: (Math.random() - .5) * .4,
+        c: COLORS[(Math.random() * COLORS.length) | 0],
+        t: 0, life: o.life * (.7 + Math.random() * .6),
+      });
+    }
+    if (parts.length > 700) parts.splice(0, parts.length - 700);
+    if (!raf) { prev = performance.now(); raf = requestAnimationFrame(tick); }
+  }
+
+  function tick(now) {
+    const dt = Math.min((now - prev) / 16.67, 3);
+    prev = now;
+    g2d.clearRect(0, 0, innerWidth, innerHeight);
+    parts = parts.filter((p) => {
+      p.t += dt * 16.67;
+      if (p.t >= p.life) return false;
+      p.vy += p.g * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.rot += p.vr * dt;
+      const k = 1 - p.t / p.life;
+      g2d.globalAlpha = Math.min(1, k * 1.6);
+      g2d.fillStyle = p.c;
+      if (p.rect) {
+        g2d.save(); g2d.translate(p.x, p.y); g2d.rotate(p.rot);
+        g2d.fillRect(-p.r, -p.r * .5, p.r * 2, p.r);
+        g2d.restore();
+      } else {
+        g2d.beginPath(); g2d.arc(p.x, p.y, p.r * (.4 + k * .6), 0, 6.283); g2d.fill();
+      }
+      return true;
+    });
+    g2d.globalAlpha = 1;
+    raf = parts.length ? requestAnimationFrame(tick) : 0;
+  }
+
+  const fx = {
+    burst: (x, y) => emit(14, x, y, { angle: -Math.PI / 2, spread: Math.PI * 1.7, min: 3, max: 8, g: .28, r: 5, life: 650 }),
+    milestone(x, y) {
+      emit(46, x, y, { angle: -Math.PI / 2, spread: Math.PI * 2, min: 4, max: 12, g: .25, r: 6, life: 950 });
+      fx.flash(.28);
+    },
+    goal() {
+      const W = innerWidth, H = innerHeight;
+      emit(80, 6, H, { angle: -1.1, spread: .6, min: 12, max: 21, g: .35, r: 6, life: 2200, rect: true });
+      emit(80, W - 6, H, { angle: -Math.PI + 1.1, spread: .6, min: 12, max: 21, g: .35, r: 6, life: 2200, rect: true });
+      emit(130, W / 2, -10, { angle: Math.PI / 2, spread: 1.2, min: 1, max: 4, g: .05, r: 6, life: 2800, rect: true, w: W });
+      fx.flash(.5);
+    },
+    flash(a) { el.flash.animate([{ opacity: a }, { opacity: 0 }], { duration: 520, easing: 'ease-out' }); },
+    float(x, y, text, neg) {
+      document.querySelectorAll('.float').forEach((n, i, all) => { if (all.length > 10 && i < all.length - 10) n.remove(); });
+      const n = document.createElement('div');
+      n.className = 'float' + (neg ? ' neg' : '');
+      n.textContent = text;
+      document.body.appendChild(n);
+      const dx = (Math.random() - .5) * 50;
+      const at = (ox, oy, s) => `translate(${x + ox}px, ${y + oy}px) translate(-50%, -50%) scale(${s})`;
+      n.animate(
+        [{ transform: at(dx, -20, .7), opacity: 1 }, { transform: at(dx, -150, 1.25), opacity: 0 }],
+        { duration: calm ? 300 : 750, easing: 'cubic-bezier(.2,.7,.3,1)' },
+      ).onfinish = () => n.remove();
+    },
+    ripple(x, y) {
+      const r = el.plus.getBoundingClientRect();
+      const n = document.createElement('span');
+      n.className = 'ripple';
+      n.style.left = `${x - r.left}px`;
+      n.style.top = `${y - r.top}px`;
+      el.plus.appendChild(n);
+      n.animate([{ transform: 'scale(0)', opacity: .6 }, { transform: 'scale(16)', opacity: 0 }], { duration: 480, easing: 'ease-out' })
+        .onfinish = () => n.remove();
+    },
+    bump() {
+      el.count.animate([{ transform: 'scale(1.2)' }, { transform: 'scale(1)' }], { duration: 200, easing: 'cubic-bezier(.2,1.6,.4,1)' });
+      el.ring.animate([{ transform: 'scale(1.035)' }, { transform: 'scale(1)' }], { duration: 220, easing: 'ease-out' });
+    },
+  };
+
+  /* ---------------- Actions ---------------- */
+  function add(x, y) {
+    state.count += 1;
+    save();
+    render();
+
+    const c = state.count;
+    fx.bump();
+    fx.ripple(x, y);
+
+    if (state.goal !== null && c === state.goal) {
+      fx.goal();
+      fx.float(x, y, 'Objectif !', false);
+      sound.goal();
+      vibrate([40, 60, 40, 60, 160]);
+    } else if (c % 10 === 0) {
+      fx.milestone(x, y);
+      fx.float(x, y, `${fmt(c)} !`, false);
+      sound.milestone(c);
+      vibrate([30, 40, 30]);
+    } else {
+      fx.burst(x, y);
+      fx.float(x, y, '+1', false);
+      sound.tap(c);
+      vibrate(12);
+    }
+  }
+
+  function remove() {
+    if (state.count === 0) return;
+    state.count -= 1;
+    save();
+    render();
+    const r = el.minus.getBoundingClientRect();
+    fx.float(r.left + r.width / 2, r.bottom + 20, '−1', true);
+    sound.minus();
+    vibrate(20);
+  }
+
+  /* ---------------- Gros bouton + ---------------- */
+  // pointerdown plutôt que click : réponse immédiate, sans attendre le relâchement du doigt.
+  el.plus.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    el.plus.classList.add('down');
+    keepAwake();
+    add(e.clientX, e.clientY);
+  });
+  const release = () => el.plus.classList.remove('down');
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach((ev) => el.plus.addEventListener(ev, release));
+  // Clavier / lecteur d'écran : un clic sans pointeur a detail === 0.
+  el.plus.addEventListener('click', (e) => {
+    if (e.detail !== 0) return;
+    const r = el.plus.getBoundingClientRect();
+    add(r.left + r.width / 2, r.top + r.height / 2);
+  });
+
+  el.minus.addEventListener('click', remove);
+
+  el.sound.addEventListener('click', () => {
+    state.muted = !state.muted;
+    save();
+    render();
+    if (!state.muted) sound.tap(1);
+  });
+
+  /* ---------------- Écran toujours allumé (utile en marchant) ---------------- */
+  let lock = null;
+  async function keepAwake() {
+    try {
+      if ('wakeLock' in navigator && !lock && document.visibilityState === 'visible') {
+        lock = await navigator.wakeLock.request('screen');
+        lock.addEventListener('release', () => { lock = null; });
+      }
+    } catch { /* non supporté ou refusé */ }
+  }
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') keepAwake(); });
+
+  /* ---------------- Réglages ---------------- */
+  PRESETS.forEach((n) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'btn';
+    b.textContent = fmt(n);
+    b.addEventListener('click', () => setGoal(n));
+    el.presets.appendChild(b);
+  });
+
+  function setGoal(v) {
+    state.goal = v;
+    save();
+    render();
+    el.dlg.close();
+  }
+
+  let armTimer = 0;
+  function arm(on) {
+    clearTimeout(armTimer);
+    el.reset.classList.toggle('armed', on);
+    el.reset.textContent = on ? 'Appuie encore pour confirmer' : 'Remettre à zéro';
+    if (on) armTimer = setTimeout(() => arm(false), 3500);
+  }
+
+  el.goalBtn.addEventListener('click', () => {
+    el.input.value = '';
+    arm(false);
+    el.dlg.showModal();
+  });
+  el.close.addEventListener('click', () => el.dlg.close());
+  el.dlg.addEventListener('click', (e) => { if (e.target === el.dlg) el.dlg.close(); });
+  el.dlg.addEventListener('close', () => arm(false));
+
+  el.form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const n = Math.floor(Number(el.input.value));
+    if (n >= 1 && n <= MAX_GOAL) return setGoal(n);
+    el.input.classList.remove('shake');
+    void el.input.offsetWidth;
+    el.input.classList.add('shake');
+  });
+  el.noGoal.addEventListener('click', () => setGoal(null));
+
+  el.reset.addEventListener('click', () => {
+    if (!el.reset.classList.contains('armed')) return arm(true);
+    state.count = 0;
+    save();
+    render();
+    el.dlg.close();
+  });
+
+  /* ---------------- Hors-ligne ---------------- */
+  if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+    addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+  }
+
+  render();
+})();
+</script>
+</body>
+</html>
