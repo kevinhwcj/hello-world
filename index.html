@@ -266,7 +266,7 @@ function fitCanvas() {
   canvas.style.left = (vw - cw) / 2 + "px";
   canvas.style.top = (vh - ch) + "px";            // collé en bas, les bandes sont en haut
 
-  const s = Math.min((window.devicePixelRatio || 1) * cssScale, 2);
+  const s = Math.min((window.devicePixelRatio || 1) * cssScale, 2.5);
   const pw = Math.round(W * s), ph = Math.round(H * s);
   if (canvas.width !== pw || canvas.height !== ph) {
     canvas.width = pw;
@@ -467,7 +467,12 @@ function buildAssets() {
   const cloud = (w, h, puffs) => makeSprite(w, h, g => {
     g.fillStyle = "#fff";
     for (const [cx, cy, r] of puffs) { g.beginPath(); g.arc(cx, cy, r, 0, TAU); g.fill(); }
-    g.fillRect(puffs[0][0], h - 13, puffs[puffs.length - 1][0] - puffs[0][0], 12);
+    const x0 = puffs[0][0] - puffs[0][2] * 0.8, x1 = puffs[puffs.length - 1][0] + puffs[puffs.length - 1][2] * 0.8;
+    g.beginPath();
+    g.moveTo(x0 + 6, h - 14); g.lineTo(x1 - 6, h - 14);
+    g.arcTo(x1, h - 14, x1, h - 1, 6); g.arcTo(x1, h - 1, x0, h - 1, 6);
+    g.arcTo(x0, h - 1, x0, h - 14, 6); g.arcTo(x0, h - 14, x1, h - 14, 6);
+    g.closePath(); g.fill();
   });
   A.cloud = [
     cloud(80, 40, [[20, 27, 12], [38, 19, 16], [58, 27, 12]]),
@@ -982,22 +987,6 @@ function drawWorld(a) {
   if (wNight > 0.01) { ctx.globalAlpha = wNight; ctx.fillStyle = sky.night; ctx.fillRect(-10, -10, W + 20, GROUND_Y + 20); }
   ctx.globalAlpha = 1;
 
-  // oiseaux lointains (jour seulement)
-  if (!perfLevel && wDay > 0.05) {
-    ctx.globalAlpha = wDay * 0.6;
-    ctx.strokeStyle = "#5a7e8a";
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    for (let i = 0; i < 2; i++) {
-      const bx = W + 20 - ((layerX.bird + i * 170) % (W + 60));
-      const by = GROUND_Y * (0.24 + i * 0.1) + Math.sin(tGame * 2 + i) * 3;
-      const fl = Math.sin(tGame * 9 + i * 2) * 2.5;
-      ctx.moveTo(bx - 6, by - 2 + fl); ctx.lineTo(bx, by + 2); ctx.lineTo(bx + 6, by - 2 + fl);
-    }
-    ctx.stroke();
-    ctx.globalAlpha = 1;
-  }
-
   // nuages
   ctx.globalAlpha = 0.88;
   for (let i = 0; i < 5; i++) {
@@ -1081,7 +1070,9 @@ function drawWorld(a) {
     if (!p.on) continue;
     ctx.globalAlpha = Math.min(1, p.life / p.max * 1.6);
     ctx.fillStyle = p.color;
-    ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * 0.6, 0, TAU);
+    ctx.fill();
   }
   ctx.globalAlpha = 1;
 }
