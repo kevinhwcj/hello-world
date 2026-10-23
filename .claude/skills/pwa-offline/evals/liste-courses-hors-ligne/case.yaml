@@ -1,0 +1,9 @@
+schema_version: "1.1"
+name: liste-courses-hors-ligne
+expected_outcome: |
+  Un projet statique prêt à publier (dossier public/ et netlify.toml) contenant une liste de courses :
+  ajouter un article, le cocher, supprimer les articles cochés. Chrome la juge installable (manifeste,
+  icônes PNG 192 et 512, service worker). Réseau coupé, la page se recharge et s'ouvre dans un nouvel
+  onglet, et la liste (articles et cases cochées) est conservée. Aucune ressource n'est chargée depuis
+  un autre site. La réponse finale explique comment installer depuis Chrome, qu'il faut ouvrir l'app une
+  fois avec du réseau, et où la liste est stockée et comment on peut la perdre.

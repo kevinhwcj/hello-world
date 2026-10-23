@@ -1,0 +1,8 @@
+[build]
+  publish = "public"
+
+# Netlify sert .webmanifest en application/octet-stream si on ne dit rien.
+[[headers]]
+  for = "/manifest.webmanifest"
+  [headers.values]
+    Content-Type = "application/manifest+json"

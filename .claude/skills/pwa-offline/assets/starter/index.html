@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0e1a">
+<meta name="color-scheme" content="dark">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Mon app">
+<title>Mon app</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    height: 100%; margin: 0;
+    background: #0b0e1a; color: #f5f7ff;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    overscroll-behavior: none;   /* pas de rafraîchissement par glissement accidentel */
+    touch-action: manipulation;  /* pas de zoom au double appui */
+    -webkit-user-select: none; user-select: none;
+  }
+  body {
+    height: 100dvh; display: grid; grid-template-rows: 1fr auto; gap: 16px;
+    padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+             max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  }
+  #value { display: grid; place-items: center; font-size: 30vmin; font-weight: 800; font-variant-numeric: tabular-nums; }
+  #action {
+    min-height: 40dvh; border: 0; border-radius: 32px; font: inherit; font-size: 48px; font-weight: 800;
+    background: #34f5c5; color: #04261d; cursor: pointer;
+  }
+  #action:focus-visible { outline: 3px solid #4d9bff; outline-offset: 3px; }
+</style>
+</head>
+<body>
+
+<!-- REMPLACER : l'interface de l'app. Garde un élément qui change l'état (#action) et un qui l'affiche (#value) :
+     scripts/check_pwa.mjs les utilise avec --tap "#action" --read "#value". -->
+<output id="value" aria-live="polite">0</output>
+<button id="action" aria-label="Ajouter un">+1</button>
+
+<script>
+(() => {
+  'use strict';
+
+  /* ---------- État persistant ---------- */
+  const STORE = 'mon-app:v1';           // REMPLACER : une clé propre à l'app, versionnée
+  const state = { value: 0 };           // REMPLACER : l'état de l'app, avec une valeur par défaut valide
+
+  // Lecture défensive : une valeur absente, corrompue ou d'un autre type retombe sur le défaut.
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORE));
+    if (saved && Number.isInteger(saved.value) && saved.value >= 0) state.value = saved.value;
+  } catch { /* stockage bloqué ou illisible : on continue avec les défauts */ }
+
+  // Enregistrer à CHAQUE changement : beforeunload/pagehide ne sont pas fiables sur mobile.
+  const save = () => { try { localStorage.setItem(STORE, JSON.stringify(state)); } catch { /* ignore */ } };
+
+  const render = () => { document.getElementById('value').textContent = String(state.value); };
+
+  /* ---------- Logique de l'app ---------- */
+  const action = document.getElementById('action');
+  let persistAsked = false;
+
+  function act() {                      // REMPLACER : ce que fait l'app
+    state.value += 1;
+    save();
+    render();
+    if (!persistAsked && navigator.storage && navigator.storage.persist) {
+      persistAsked = true;              // demande à Chrome de ne pas purger les données (il décide seul)
+      navigator.storage.persist().catch(() => {});
+    }
+  }
+  // pointerdown : réponse immédiate au toucher. click avec detail === 0 : clavier et lecteurs d'écran.
+  action.addEventListener('pointerdown', (e) => { if (e.pointerType !== 'mouse' || e.button === 0) act(); });
+  action.addEventListener('click', (e) => { if (e.detail === 0) act(); });
+
+  render();
+
+  /* ---------- Hors ligne ---------- */
+  if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+    addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+  }
+})();
+</script>
+</body>
+</html>
