@@ -2,13 +2,14 @@
 // Vérifie qu'une app web est une PWA installable avec Chrome, utilisable hors ligne,
 // et qu'elle garde ses données.
 //
-//   node check_pwa.mjs <url> [--tap "<sélecteur>" --read "<sélecteur>"] [--taps 3]
+//   node check_pwa.mjs <url> [--tap "<sélecteur>" --read "<sélecteur>"] [--fill "<sélecteur>"] [--taps 3]
 //
-//   --tap   élément à toucher pour faire changer l'état de l'app (ex. "#plus")
-//   --read  élément dont le texte reflète cet état (ex. "#count")
+//   --tap   élément à toucher pour faire changer l'état de l'app (ex. "#plus", ou "#ajouter")
+//   --read  élément dont le texte reflète cet état (ex. "#count", ou le conteneur de la liste "#liste")
+//   --fill  champ à remplir avant chaque appui (apps où l'on saisit quelque chose, ex. "#nouvel-article")
 //   --taps  nombre d'appuis (défaut 3)
 //
-// Sans --tap/--read, la partie « mémoire » se limite à un constat. Code de sortie : 1 s'il y a un FAIL.
+// Sans --tap/--read, la partie « mémoire » n'est PAS testée (le script le dit). Code de sortie : 1 s'il y a un FAIL.
 import { openSession } from './_browser.mjs';
 
 function parse(argv) {
@@ -23,7 +24,7 @@ function parse(argv) {
 const opts = parse(process.argv.slice(2));
 const url = opts._[0];
 if (!url || (!opts.tap) !== (!opts.read)) {
-  console.error('Usage : node check_pwa.mjs <url> [--tap "<sélecteur>" --read "<sélecteur>"] [--taps 3]');
+  console.error('Usage : node check_pwa.mjs <url> [--tap "<sélecteur>" --read "<sélecteur>"] [--fill "<sélecteur>"] [--taps 3]');
   process.exit(2);
 }
 const interactive = Boolean(opts.tap && opts.read);
@@ -121,13 +122,19 @@ try {
     `${pageCached ? '' : 'page absente ; '}${missing.length ? `manquants : ${missing.join(', ')} ` : ''}— cache.addAll échoue en bloc si un fichier de ASSETS est introuvable`);
 
   /* ---------- Mémoire (en ligne) ---------- */
-  const read = (p) => p.locator(opts.read).first().innerText().then((t) => t.trim());
+  // Espaces et retours à la ligne normalisés : une liste s'affiche « Article 1 Article 2 » sur une ligne.
+  const read = (p) => p.locator(opts.read).first().innerText().then((t) => t.replace(/\s+/g, ' ').trim());
   const tap = (p) => p.locator(opts.tap).first().tap();
+  // Une « action » = remplir le champ s'il y en a un, puis toucher le bouton.
+  const act = async (p, text) => {
+    if (opts.fill) await p.locator(opts.fill).first().fill(text);
+    await tap(p);
+  };
   let afterTaps;
 
   if (interactive) {
     const before = await read(page);
-    for (let i = 0; i < taps; i++) await tap(page);
+    for (let i = 0; i < taps; i++) await act(page, `Article ${i + 1}`);
     afterTaps = await read(page);
     check(afterTaps !== before, `l'app réagit aux appuis (${before} → ${afterTaps})`, `${opts.read} n'a pas changé`);
     await page.reload({ waitUntil: 'domcontentloaded' });
@@ -143,6 +150,17 @@ try {
   info('stockage', `localStorage [${storage.local.join(', ')}] · IndexedDB [${storage.idb.join(', ')}] · persistant : ${storage.persisted}`);
   if (interactive) check(storage.local.length + storage.idb.length > 0, 'des données sont enregistrées sur l\'appareil');
   if (storage.persisted === false) info('persistance', 'non accordée ici : Chrome l\'accorde surtout aux apps installées, ne pas en dépendre');
+
+  /* ---------- Mise en page : jamais de défilement horizontal sur petit écran ---------- */
+  for (const width of [320, 390]) {
+    await page.setViewportSize({ width, height: 700 });
+    const { scroll, client } = await page.evaluate(() => ({
+      scroll: document.documentElement.scrollWidth, client: document.documentElement.clientWidth,
+    }));
+    check(scroll <= client + 1, `mise en page : pas de défilement horizontal à ${width}px`,
+      `contenu de ${scroll}px dans ${client}px — grille sans minmax(0, 1fr), champ ou image trop large ?`);
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
 
   collecting = false;
   check(problems.length === 0, 'aucune erreur JavaScript ou console', problems.slice(0, 3).join(' | '));
@@ -163,7 +181,7 @@ try {
   if (offlineOk && interactive) {
     const kept = await read(page);
     check(kept === afterTaps, 'hors ligne : valeur conservée', `${afterTaps} → ${kept}`);
-    await tap(page);
+    await act(page, 'Article hors ligne');
     const moved = await read(page);
     check(moved !== kept, 'hors ligne : l\'app réagit encore', `${kept} → ${moved}`);
 
@@ -188,5 +206,8 @@ try {
   await session.close();
 }
 
-console.log(failures ? `\n${failures} problème(s) à corriger` : '\nTout est bon : installable, hors ligne, mémoire conservée');
+const covered = interactive
+  ? 'installable, hors ligne, mémoire conservée'
+  : 'installable et hors ligne. MÉMOIRE NON TESTÉE : ajoute --tap et --read (et --fill si l\'app demande une saisie)';
+console.log(failures ? `\n${failures} problème(s) à corriger` : `\nTout est bon : ${covered}`);
 process.exitCode = failures ? 1 : 0;

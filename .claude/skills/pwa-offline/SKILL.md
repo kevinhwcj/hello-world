@@ -21,7 +21,7 @@ Une PWA est un site statique que Chrome sait installer comme une app : icône su
 1. **Cadrer sans interroger.** Quelle donnée doit survivre ? Quel appareil (Android + Chrome par défaut) ? Faut-il l'héberger ? Prends des défauts raisonnables, annonce-les, et ne pose une question que si la réponse change vraiment le résultat.
 2. **Partir du modèle.** Copie `assets/starter/` dans le dossier publié du projet (`public/`), puis adapte : titre et `name`/`short_name`, clé `STORE` dans `index.html`, constante `CACHE` dans `sw.js`, couleurs (`theme_color`, `background_color`, `<meta name="theme-color">`), `icon.svg`. La clé de stockage et le nom du cache doivent être propres à l'app, sinon deux apps sur la même origine se marchent dessus.
 3. **Icônes.** Dessine `icon.svg` en carré, fond plein, motif dans les 64 % centraux (Android rogne les bords avec un masque circulaire). Puis `node <skill>/scripts/make_icons.mjs public/icon.svg public/` produit `icon-192.png`, `icon-512.png` et `apple-touch-icon.png`.
-4. **Écrire l'app** dans `index.html`. Réflexes mobile qui ont servi : `touch-action: manipulation` (pas de zoom au double appui), `overscroll-behavior: none` (pas de rafraîchissement par glissement accidentel), `height: 100dvh`, `viewport-fit=cover` avec `env(safe-area-inset-*)`, zones tactiles d'au moins 48 px. Pour une réponse immédiate, réagis à `pointerdown` et garde un `click` avec `e.detail === 0` pour le clavier et les lecteurs d'écran. Teste aussi un écran court (390×664, 320×568) et le paysage : c'est là que les éléments se chevauchent.
+4. **Écrire l'app** dans `index.html`. Réflexes mobile qui ont servi : `touch-action: manipulation` (pas de zoom au double appui), `overscroll-behavior: none` (pas de rafraîchissement par glissement accidentel), `height: 100dvh`, `viewport-fit=cover` avec `env(safe-area-inset-*)`, zones tactiles d'au moins 48 px. Pour une réponse immédiate, réagis à `pointerdown` et garde un `click` avec `e.detail === 0` pour le clavier et les lecteurs d'écran. Teste aussi un écran court (390×664, 320×568) et le paysage : c'est là que les éléments se chevauchent. Garde `grid-template-columns: minmax(0, 1fr)` sur une mise en page en grille : sans lui, un champ de saisie ou un long texte élargit toute la page. Option utile : un bouton « Installer » dans l'app, caché jusqu'à ce que Chrome envoie l'événement `beforeinstallprompt` (à garder en mémoire, puis appeler `.prompt()` au toucher).
 5. **Persistance** (règles plus bas).
 6. **Vérifier** avec `scripts/check_pwa.mjs`. Ne dis jamais « ça marche hors ligne » sans l'avoir vu passer.
 7. **Déployer** si l'utilisateur le veut (plus bas), puis relancer la vérification sur l'adresse publique.
@@ -45,7 +45,11 @@ node <skill>/scripts/check_pwa.mjs http://localhost:8765/ --tap "#action" --read
 kill $SERVER
 ```
 
-`--tap` est l'élément qui fait changer l'état, `--read` celui dont le texte le reflète. Le script contrôle, dans un vrai Chromium : le manifeste, les icônes, l'installabilité selon Chrome lui-même, le service worker, le contenu du cache, puis **coupe le réseau** et vérifie que la page se recharge, que la valeur est conservée, que l'app réagit encore et qu'un nouvel onglet s'ouvre à froid. Code de sortie 1 s'il y a un `FAIL`. Un `WARN` est à lire mais non bloquant.
+`--tap` est l'élément qui fait changer l'état, `--read` celui dont le texte le reflète. Si l'app demande une saisie avant d'agir (liste, carnet…), ajoute `--fill "<champ>"` : le script y écrit un texte avant chaque appui, et `--read` doit alors viser le conteneur de la liste.
+
+Le script contrôle, dans un vrai Chromium : le manifeste, les icônes, l'installabilité selon Chrome lui-même, le service worker, le contenu du cache, l'absence de défilement horizontal à 320 et 390 px, puis **coupe le réseau** et vérifie que la page se recharge, que la valeur est conservée, que l'app réagit encore et qu'un nouvel onglet s'ouvre à froid. Code de sortie 1 s'il y a un `FAIL`. Un `WARN` est à lire mais non bloquant.
+
+**Sans `--tap`/`--read`, la mémoire n'est pas testée** et le script le dit à la fin : ne présente alors rien comme « mémoire vérifiée ». Il ne regarde pas non plus le rendu : fais en plus des captures à 390×664, 320×568 et en paysage, avec un texte long, pour repérer les chevauchements.
 
 Arrête le serveur par son PID, jamais avec `pkill -f "http.server"` : le motif correspond à la ligne de commande de ton propre shell, qui est tué avec.
 
@@ -71,6 +75,7 @@ Après un déploiement, relance le même script sur l'adresse publique (sans ser
 - **`cache.addAll` est tout ou rien** : si un seul fichier de la liste `ASSETS` est introuvable, le service worker ne s'installe pas et il n'y a plus de hors-ligne, sans message visible. Garde la liste synchrone avec les fichiers réels ; `check_pwa.mjs` le détecte.
 - Le service worker ne s'enregistre qu'en HTTPS ou sur `localhost`.
 - Nouveau fichier ajouté à l'app : ajoute-le à `ASSETS` et change le nom `CACHE` (`app-v2`) pour que les anciens fichiers soient purgés.
+- Une grille de mise en page sans `minmax(0, 1fr)` laisse un champ ou un long mot élargir la page au-delà de l'écran (le modèle l'a déjà corrigé ; `check_pwa.mjs` le détecte).
 - Le fond du `maskable` doit remplir tout le carré, sinon Android affiche un cadre blanc autour de l'icône.
 - iOS n'autorise le son qu'après un geste de l'utilisateur, et seulement au relâchement du doigt : réessaie `audioContext.resume()` sur `pointerup`/`touchend`.
 - Pas de notifications push, de synchronisation en arrière-plan ni de multi-appareils ici ; propose-les comme extension si on te les demande.
